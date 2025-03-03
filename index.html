@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Киргизский коллайдер</title>
+    <style>
+        body {
+            text-align: center;
+            background: var(--tg-theme-bg-color, #e0f7fa);
+            font-family: Arial;
+            color: var(--tg-theme-text-color, #000);
+            margin: 0;
+            padding: 10px;
+        }
+        canvas {
+            border: 2px solid #4caf50;
+            background: url('https://via.placeholder.com/400x400?text=Юрта');
+            max-width: 100%;
+            height: auto;
+        }
+        #controls {
+            margin: 10px;
+        }
+        button {
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background: var(--tg-theme-button-color, #ffca28);
+            color: var(--tg-theme-button-text-color, #000);
+        }
+        #clicker {
+            font-size: 18px;
+        }
+        #donkey {
+            width: 100px;
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        .pedaling {
+            animation: pedal 0.5s infinite alternate;
+        }
+        @keyframes pedal {
+            from { transform: translateX(-50%) rotate(-10deg); }
+            to { transform: translateX(-50%) rotate(10deg); }
+        }
+        #leaderboard {
+            margin: 20px auto;
+            max-width: 400px;
+            background: var(--tg-theme-secondary-bg-color, #fff);
+            border-radius: 10px;
+            padding: 10px;
+            display: none;
+        }
+        .score-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px;
+            border-bottom: 1px solid var(--tg-theme-hint-color, #ccc);
+        }
+    </style>
+</head>
+<body>
+    <h1>Киргизский коллайдер</h1>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <div id="controls">
+        <p>Очки Акыла: <span id="scoreAkyl">0</span> | Очки Бека: <span id="scoreBek">0</span></p>
+        <p>Скорость: <span id="speed">1x</span></p>
+        <button id="clicker" onclick="boostSpeed()">Клик!</button>
+        <button onclick="saveScores()">Сохранить в лидерборд</button>
+        <button onclick="toggleLeaderboard()">Показать лидерборд</button>
+    </div>
+    <div id="leaderboard">
+        <h3>Топ игроков</h3>
+        <div id="leaderboard-content"></div>
+    </div>
+    <img id="donkey" src="https://via.placeholder.com/100x50?text=Осёл" alt="Осёл">
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getFirestore, collection, addDoc, serverTimestamp, query, orderBy, limit, getDocs } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        // Firebase конфигурация
+        const firebaseConfig = {
+            apiKey: "AIzaSyAYIJpLML4Pq6ffQFPYaR3HbW2JwIb5o7Q",
+            authDomain: "kyrgyz-collider.firebaseapp.com",
+            projectId: "kyrgyz-collider",
+            storageBucket: "kyrgyz-collider.firebasestorage.app",
+            messagingSenderId: "808540635836",
+            appId: "1:808540635836:web:34e409f5664d94e77946b9",
+            measurementId: "G-PD9DGP2KEF"
+        };
+
+        // Инициализация Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Делаем функции доступными глобально
+        window.saveScoresToFirebase = async function(akylScore, bekScore) {
+            const user = Telegram.WebApp.initDataUnsafe.user || { id: 'guest', first_name: 'Гость' };
+            try {
+                await addDoc(collection(db, 'collider_scores'), {
+                    userId: user.id,
+                    name: user.first_name,
+                    akylScore: akylScore,
+                    bekScore: bekScore,
+                    totalScore: akylScore + bekScore,
+                    timestamp: serverTimestamp()
+                });
+                Telegram.WebApp.showAlert('Результат сохранён! Жакшы иш!');
+                loadLeaderboard();
+            } catch (e) {
+                console.error("Ошибка сохранения:", e);
+                Telegram.WebApp.showAlert('Ошибка сохранения результата');
+            }
+        };
+
+        window.loadLeaderboard = async function() {
+            try {
+                const q = query(
+                    collection(db, 'collider_scores'),
+                    orderBy('totalScore', 'desc'),
+                    limit(10)
+                );
+                const querySnapshot = await getDocs(q);
+                const leaderboardContent = document.getElementById('leaderboard-content');
+                leaderboardContent.innerHTML = '';
+                
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const div = document.createElement('div');
+                    div.className = 'score-item';
+                    div.innerHTML = `
+                        <span>${data.name}</span>
+                        <span>${data.totalScore} очков</span>
+                    `;
+                    leaderboardContent.appendChild(div);
+                });
+            } catch (e) {
+                console.error("Ошибка загрузки лидерборда:", e);
+            }
+        };
+    </script>
+
+    <!-- Telegram WebApp -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Telegram инициализация
+        Telegram.WebApp.ready();
+        Telegram.WebApp.expand();
+
+        // Добавляем функцию переключения лидерборда
+        window.toggleLeaderboard = function() {
+            const leaderboard = document.getElementById('leaderboard');
+            if (leaderboard.style.display === 'none' || !leaderboard.style.display) {
+                leaderboard.style.display = 'block';
+                loadLeaderboard();
+            } else {
+                leaderboard.style.display = 'none';
+            }
+        };
+
+        // Canvas
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const donkey = document.getElementById('donkey');
+
+        // Персонажи
+        let akyl = {
+            x: 100,
+            y: 200,
+            vx: 1,
+            vy: 0,
+            score: 0,
+            size: 20,
+            color: '#d32f2f'
+        };
+
+        let bek = {
+            x: 300,
+            y: 200,
+            vx: -1,
+            vy: 0,
+            score: 0,
+            size: 20,
+            color: '#1976d2'
+        };
+
+        let speedMultiplier = 1;
+        let decayRate = 0.02;
+        let impactMultiplier = 1;
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Акыл (красный с "калпаком")
+            ctx.beginPath();
+            ctx.arc(akyl.x, akyl.y, akyl.size, 0, Math.PI * 2);
+            ctx.fillStyle = akyl.color;
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(akyl.x - 10, akyl.y - 25, 20, 10);
+
+            // Бек (синий с "калпаком")
+            ctx.beginPath();
+            ctx.arc(bek.x, bek.y, bek.size, 0, Math.PI * 2);
+            ctx.fillStyle = bek.color;
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(bek.x - 10, bek.y - 25, 20, 10);
+        }
+
+        function update() {
+            akyl.x += akyl.vx * speedMultiplier;
+            akyl.y += akyl.vy * speedMultiplier;
+            bek.x += bek.vx * speedMultiplier;
+            bek.y += bek.vy * speedMultiplier;
+
+            keepInBounds(akyl);
+            keepInBounds(bek);
+
+            const dx = akyl.x - bek.x;
+            const dy = akyl.y - bek.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < akyl.size + bek.size) {
+                akyl.vx *= -1;
+                akyl.vy = (Math.random() - 0.5) * 2;
+                bek.vx *= -1;
+                bek.vy = (Math.random() - 0.5) * 2;
+
+                const impact = Math.floor(speedMultiplier * impactMultiplier);
+                akyl.score += impact;
+                bek.score += impact;
+
+                document.getElementById('scoreAkyl').textContent = akyl.score;
+                document.getElementById('scoreBek').textContent = bek.score;
+
+                // Вибрация при столкновении (если поддерживается)
+                if (Telegram.WebApp.isVersionAtLeast('6.1')) {
+                    Telegram.WebApp.hapticFeedback.impactOccurred('medium');
+                }
+
+                Telegram.WebApp.showAlert(`Бум! Удар на ${impact} очков! Жакшы!`);
+            }
+
+            if (speedMultiplier > 1) {
+                speedMultiplier -= decayRate;
+                impactMultiplier = speedMultiplier;
+                if (speedMultiplier < 1) {
+                    speedMultiplier = 1;
+                    donkey.classList.remove('pedaling');
+                }
+                document.getElementById('speed').textContent = speedMultiplier.toFixed(1) + 'x';
+            }
+        }
+
+        function keepInBounds(player) {
+            if (player.x < player.size) {
+                player.x = player.size;
+                player.vx *= -1;
+            }
+            if (player.x > canvas.width - player.size) {
+                player.x = canvas.width - player.size;
+                player.vx *= -1;
+            }
+            if (player.y < player.size + 10) {
+                player.y = player.size + 10;
+                player.vy *= -1;
+            }
+            if (player.y > canvas.height - player.size) {
+                player.y = canvas.height - player.size;
+                player.vy *= -1;
+            }
+        }
+
+        function boostSpeed() {
+            speedMultiplier += 0.3;
+            if (speedMultiplier > 6) speedMultiplier = 6;
+            impactMultiplier = speedMultiplier;
+            akyl.vx = akyl.vx > 0 ? 1 : -1;
+            bek.vx = bek.vx > 0 ? 1 : -1;
+            document.getElementById('speed').textContent = speedMultiplier.toFixed(1) + 'x';
+            donkey.classList.add('pedaling');
+
+            // Тактильный отклик при клике (если поддерживается)
+            if (Telegram.WebApp.isVersionAtLeast('6.1')) {
+                Telegram.WebApp.hapticFeedback.impactOccurred('light');
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+
+        function saveScores() {
+            window.saveScoresToFirebase(akyl.score, bek.score);
+        }
+
+        // Адаптация к теме Telegram
+        if (Telegram.WebApp.colorScheme === 'dark') {
+            document.body.style.background = '#1f1f1f';
+            document.body.style.color = '#fff';
+        }
+    </script>
+</body>
+</html> 
